@@ -22,6 +22,19 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
+## Smarter Scheduling
+
+Several algorithmic improvements were added to `pawpal_system.py` beyond the base scheduler:
+
+**Task filtering — `Schedule.filter_tasks(completed, pet_name)`**
+Returns tasks narrowed by completion status, pet name, or both. Each parameter is optional — passing neither returns all tasks. Useful for building focused views without modifying the underlying data.
+
+**Automatic recurrence — `Task.recur()` and `Pet.complete_task(task_name)`**
+Marking a `"daily"` or `"weekly"` task complete via `complete_task()` automatically queues a fresh copy for the next occurrence. Due dates are calculated with Python's `timedelta` (`+1 day` for daily, `+7 days` for weekly). One-off tasks (`frequency="once"`) return `None` from `recur()` and are never re-queued.
+
+**Conflict detection — `Schedule.detect_conflicts()`**
+Checks every pair of pending timed tasks for overlapping windows using the interval overlap condition `start_a < end_b and start_b < end_a`. Returns a flat list of human-readable warning strings — one per conflict — rather than raising exceptions. Tasks with unrecognised time formats produce a `Warning:` message and are skipped gracefully instead of crashing the program.
+
 ## Getting started
 
 ### Setup
