@@ -1,5 +1,51 @@
+import re
 from pawpal_system import Owner, Pet, Task, Schedule, Priority
 import streamlit as st
+
+PRIORITY_BADGE = {
+    "HIGH":   "🔴 HIGH",
+    "MEDIUM": "🟡 MEDIUM",
+    "LOW":    "🟢 LOW",
+}
+
+def _render_conflicts(conflicts: list[str]) -> None:
+    """Display conflict warnings in a structured, pet-owner-friendly format."""
+    # Pattern: "Conflict: [PetA] 'TaskA' (HH:MM, D min)  overlaps  [PetB] 'TaskB' (HH:MM, D min)"
+    conflict_pattern = re.compile(
+        r"Conflict: \[(.+?)\] '(.+?)' \((.+?), (\d+) min\)\s+overlaps\s+\[(.+?)\] '(.+?)' \((.+?), (\d+) min\)"
+    )
+
+    true_conflicts = [c for c in conflicts if c.startswith("Conflict")]
+    format_warnings = [c for c in conflicts if c.startswith("Warning")]
+
+    if true_conflicts:
+        st.markdown("#### ⚠️ Scheduling Conflicts")
+        st.caption("These tasks overlap — one pet may be left unattended. Adjust a start time to resolve.")
+
+        for msg in true_conflicts:
+            m = conflict_pattern.match(msg)
+            if m:
+                pet_a, task_a, time_a, dur_a, pet_b, task_b, time_b, dur_b = m.groups()
+                with st.container(border=True):
+                    col_a, mid, col_b = st.columns([5, 1, 5])
+                    with col_a:
+                        st.markdown(f"**{pet_a}** — {task_a}")
+                        st.caption(f"🕐 {time_a} · {dur_a} min")
+                    with mid:
+                        st.markdown("<div style='text-align:center;padding-top:8px'>vs</div>",
+                                    unsafe_allow_html=True)
+                    with col_b:
+                        st.markdown(f"**{pet_b}** — {task_b}")
+                        st.caption(f"🕐 {time_b} · {dur_b} min")
+                    st.warning(f"💡 Tip: reschedule one of these tasks so they don't overlap.", icon="💡")
+            else:
+                # Fallback if the string doesn't match the expected pattern
+                st.warning(msg)
+
+    if format_warnings:
+        with st.expander("⚠️ Time format issues"):
+            for w in format_warnings:
+                st.info(w)
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 st.title("🐾 PawPal+")
@@ -77,7 +123,7 @@ else:
     with col3:
         task_priority = st.selectbox("Priority", ["HIGH", "MEDIUM", "LOW"], index=0)
 
-    task_constraint = st.text_input("Time constraint (optional, e.g. 8am)", value="")
+    task_constraint = st.text_input("Time constraint (optional, HH:MM e.g. 08:30)", value="")
     task_frequency = st.selectbox("Frequency", ["daily", "weekly", "once"])
 
     if st.button("Add task"):
@@ -92,15 +138,45 @@ else:
         st.success(f"Added '{task_name}' to {selected_pet.name}.")
 
     if any(p.tasks for p in owner.pets):
-        st.markdown("**Current tasks by pet:**")
-        for pet in owner.pets:
-            if pet.tasks:
-                st.markdown(f"*{pet.name}*")
-                rows = [
-                    {"Task": t.name, "Duration": t.duration, "Priority": t.priority.name, "Frequency": t.frequency}
-                    for t in pet.tasks
-                ]
-                st.table(rows)
+        st.markdown("**Current tasks (sorted by priority):**")
+
+        # Summary metrics
+        all_tasks = owner.get_all_tasks()
+        pending_count = sum(1 for t in all_tasks if not t.completed)
+        conflict_count = sum(1 for c in schedule.detect_conflicts() if c.startswith("Conflict"))
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total tasks", len(all_tasks))
+        m2.metric("Pending", pending_count)
+        m3.metric("Conflicts", conflict_count, delta=None if conflict_count == 0 else "⚠️", delta_color="inverse")
+
+        # Filter control — drives schedule.filter_tasks()
+        filter_choice = st.radio(
+            "Show", ["All", "Pending only", "Completed only"], horizontal=True
+        )
+        completed_filter = None if filter_choice == "All" else filter_choice == "Completed only"
+        filtered = schedule.filter_tasks(completed=completed_filter)
+
+        if not filtered:
+            st.info("No tasks match that filter.")
+        else:
+            task_to_pet = {id(t): pet.name for pet in owner.pets for t in pet.tasks}
+            sorted_filtered = sorted(filtered, key=lambda t: t.priority.value, reverse=True)
+            rows = [
+                {
+                    "Pet": task_to_pet.get(id(t), "—"),
+                    "Task": t.name,
+                    "Priority": PRIORITY_BADGE[t.priority.name],
+                    "Duration (min)": t.duration,
+                    "Frequency": t.frequency,
+                    "Time": t.time_constraint or "—",
+                    "Done": "✓" if t.completed else "",
+                }
+                for t in sorted_filtered
+            ]
+            st.table(rows)
+
+        # Conflict warnings — structured display via helper
+        _render_conflicts(schedule.detect_conflicts())
 
 st.divider()
 

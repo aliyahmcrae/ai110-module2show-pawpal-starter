@@ -1,39 +1,73 @@
-# PawPal+ (Module 2 Project)
+# PawPal+
 
-You are building **PawPal+**, a Streamlit app that helps a pet owner plan care tasks for their pet.
+**PawPal+** is a Streamlit app that helps busy pet owners build a consistent, prioritised daily care schedule across multiple pets. Add your pets and tasks, set time constraints, and PawPal+ will sort, schedule, and flag conflicts automatically.
 
-## Scenario
+---
 
-A busy pet owner needs help staying consistent with pet care. They want an assistant that can:
+## Features
 
-- Track pet care tasks (walks, feeding, meds, enrichment, grooming, etc.)
-- Consider constraints (time available, priority, owner preferences)
-- Produce a daily plan and explain why it chose that plan
+### Priority-Based Sorting
+Tasks are ranked using a three-level `Priority` enum — `HIGH`, `MEDIUM`, and `LOW` — with numeric values (3, 2, 1) that drive a stable descending sort. The scheduler always considers higher-priority tasks first, so a dog's medication will never be bumped by a lower-priority grooming session. Equal-priority tasks preserve their original insertion order (Python's sort is stable).
 
-Your job is to design the system first (UML), then implement the logic in Python, then connect it to the Streamlit UI.
+**Implemented in:** `Schedule.sort_tasks_by_priority()`
 
-## What you will build
+---
 
-Your final app should:
+### Greedy Time-Fitting Scheduler
+Given the owner's available minutes per day, the scheduler walks the priority-sorted task list and greedily adds each pending task if its duration fits within the remaining time budget. Tasks that are too long to fit are skipped — but the loop continues, so a smaller lower-priority task can still fill leftover time. This runs in O(n log n) time, dominated by the sort step.
 
-- Let a user enter basic owner + pet info
-- Let a user add/edit tasks (duration + priority at minimum)
-- Generate a daily schedule/plan based on constraints and priorities
-- Display the plan clearly (and ideally explain the reasoning)
-- Include tests for the most important scheduling behaviors
+**Implemented in:** `Schedule.fit_tasks_into_time()`
 
-## Smarter Scheduling
+---
 
-Several algorithmic improvements were added to `pawpal_system.py` beyond the base scheduler:
+### Daily and Weekly Recurrence
+Tasks can be marked `"daily"`, `"weekly"`, or `"once"`. When a recurring task is completed, `Pet.complete_task()` automatically calls `Task.recur()` to create a fresh, uncompleted copy with a new due date — `today + 1 day` for daily tasks, `today + 7 days` for weekly. One-off tasks return `None` from `recur()` and are never re-queued. This means the owner never has to manually recreate routine care tasks.
 
-**Task filtering — `Schedule.filter_tasks(completed, pet_name)`**
-Returns tasks narrowed by completion status, pet name, or both. Each parameter is optional — passing neither returns all tasks. Useful for building focused views without modifying the underlying data.
+**Implemented in:** `Task.recur()` and `Pet.complete_task()`
 
-**Automatic recurrence — `Task.recur()` and `Pet.complete_task(task_name)`**
-Marking a `"daily"` or `"weekly"` task complete via `complete_task()` automatically queues a fresh copy for the next occurrence. Due dates are calculated with Python's `timedelta` (`+1 day` for daily, `+7 days` for weekly). One-off tasks (`frequency="once"`) return `None` from `recur()` and are never re-queued.
+---
 
-**Conflict detection — `Schedule.detect_conflicts()`**
-Checks every pair of pending timed tasks for overlapping windows using the interval overlap condition `start_a < end_b and start_b < end_a`. Returns a flat list of human-readable warning strings — one per conflict — rather than raising exceptions. Tasks with unrecognised time formats produce a `Warning:` message and are skipped gracefully instead of crashing the program.
+### Conflict Detection
+Before building the schedule, `detect_conflicts()` checks every pair of pending timed tasks using the standard interval overlap condition:
+
+```
+task A starts before task B ends  AND  task B starts before task A ends
+```
+
+Any overlap — whether two tasks start at the exact same time or one starts mid-way through another — produces a human-readable conflict message naming the pets and tasks involved. Tasks with an unrecognised time format produce a `Warning:` notice and are skipped gracefully rather than crashing the program.
+
+**Implemented in:** `Schedule.detect_conflicts()`
+
+---
+
+### Task Filtering
+The task list can be narrowed by completion status, pet name, or both, without modifying any underlying data. All filter parameters are optional — omitting both returns the full task list. This powers the All / Pending / Completed view in the UI.
+
+**Implemented in:** `Schedule.filter_tasks(completed, pet_name)`
+
+---
+
+### Live Conflict Warnings in the UI
+Conflict warnings surface in the app the moment a time constraint is entered — no need to generate the schedule first. Each conflict is displayed in a bordered card showing both clashing tasks side-by-side (pet name, task name, start time, duration) with an actionable tip to reschedule. Bad time-format warnings are collapsed into an expandable section so they don't clutter the main view.
+
+**Implemented in:** `app.py → _render_conflicts()`
+
+---
+
+### Formatted Daily Plan
+`explain_plan()` generates a terminal-style plan grouped by pet, with priority badges (`[!!!]` / `[!! ]` / `[!  ]`), a visual progress bar showing minutes used versus available, and a list of tasks that were skipped because they didn't fit. The plan is accessible via the **Build Schedule** button in the UI.
+
+**Implemented in:** `Schedule.explain_plan()`
+
+---
+
+## 📸 Demo
+
+![PawPal+ app screenshot showing the Owner setup, Add a Pet form, and current pets list](screenshots/app_demo.png)
+
+*The Owner section lets you set your name and daily time budget. Add a Pet registers each animal by name, species, age, and any special needs. The task table below (not shown) displays all tasks sorted by priority with live conflict warnings.*
+
+---
 
 ## Testing PawPal+
 
